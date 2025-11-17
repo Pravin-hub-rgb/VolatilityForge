@@ -1,57 +1,93 @@
 // src/strategies/redCandleHighBreak.js
+import { isRedCandle } from '../utils/helpers.js';
 
 /**
- * RED CANDLE HIGH BREAK STRATEGY
+ * RED CANDLE HIGH BREAK STRATEGY - SELF-CONTAINED
  * 
  * Setup:
  * - Find first red candle (open > close)
- * - This becomes the reference candle
- * 
- * Entry:
- * - Enter when price breaks above reference candle high
- * - Only wait for next 2 candles after reference
- * - Entry price = reference candle high
- * 
- * Exit:
- * - Managed by parameters (SL/TSL/Target/Time)
- * 
- * After exit:
- * - Look for next red candle and repeat
+ * - Enter when price breaks above red candle high
+ * - Wait max 2 candles for breakout
+ * - If newer red candle appears while waiting, shift to it
  */
-
 export const redCandleHighBreak = {
   id: 'red_candle_high_break',
   name: 'Red Candle High Break',
   description: 'Enter when price breaks above the high of first red candle',
-  
+
   /**
-   * Identifies if current candle qualifies as a reference candle
-   * @param {Object} candle - Current candle data
-   * @param {Number} index - Current candle index
-   * @param {Array} allCandles - All candles (for context if needed)
-   * @returns {Boolean} - True if this is a valid reference candle
+   * Create a new instance of this strategy with its own state
    */
-  findReferenceCandle(candle, index, allCandles) {
-    // Red candle: open > close
-    return candle.open > candle.close;
-  },
-  
-  /**
-   * Checks if entry condition is met on current candle
-   * @param {Object} currentCandle - The candle being checked
-   * @param {Object} referenceCandle - The reference candle
-   * @returns {Number|null} - Entry price if triggered, null otherwise
-   */
-  checkEntry(currentCandle, referenceCandle) {
-    // Entry triggered if current candle high breaks reference candle high
-    if (currentCandle.high > referenceCandle.high) {
-      return referenceCandle.high; // Entry at reference high
-    }
-    return null; // No entry
-  },
-  
-  /**
-   * Maximum candles to wait after reference before resetting
-   */
-  maxCandlesWait: 2
+  createInstance() {
+    return new RedCandleHighBreakInstance();
+  }
 };
+
+/**
+ * Strategy instance that maintains state
+ */
+class RedCandleHighBreakInstance {
+  constructor() {
+    this.reset();
+  }
+
+  reset() {
+    this.referenceCandle = null;
+    this.candlesSinceReference = 0;
+    this.maxWaitCandles = 2;
+  }
+
+  /**
+   * Called when trade exits - reset everything
+   */
+  onTradeExit() {
+    this.reset();
+  }
+
+  /**
+   * Main entry check - called for every candle
+   * @returns {Object|null} { enter: true, entryPrice: X, referenceCandle: Y } or null
+   */
+  checkEntry(candle, index, allCandles) {
+    // STAGE 1: Looking for reference red candle
+    if (!this.referenceCandle) {
+      if (isRedCandle(candle)) {
+        this.referenceCandle = candle;
+        this.candlesSinceReference = 0;
+        console.log(`[${candle.timestamp}] 🔴 Red candle reference set, high=${candle.high}`);
+      }
+      return null;
+    }
+
+    // STAGE 2: Have reference, waiting for breakout
+    this.candlesSinceReference++;
+
+    // Check if newer red candle appears (shift reference)
+    if (isRedCandle(candle)) {
+      this.referenceCandle = candle;
+      this.candlesSinceReference = 0;
+      console.log(`[${candle.timestamp}] 🔄 Shifted to newer red candle, high=${candle.high}`);
+      return null;
+    }
+
+    // Check for breakout
+    if (candle.high > this.referenceCandle.high) {
+      const entryPrice = this.referenceCandle.high;
+      console.log(`[${candle.timestamp}] 🚀 ENTRY! Price=${entryPrice}, broke ${this.referenceCandle.high}`);
+      
+      return {
+        enter: true,
+        entryPrice: entryPrice,
+        referenceCandle: this.referenceCandle
+      };
+    }
+
+    // Timeout - waited too long
+    if (this.candlesSinceReference > this.maxWaitCandles) {
+      console.log(`[${candle.timestamp}] ⏰ Timeout, resetting`);
+      this.reset();
+    }
+
+    return null;
+  }
+}

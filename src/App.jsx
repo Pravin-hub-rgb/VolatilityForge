@@ -18,7 +18,7 @@ function App() {
     trailingBy: 5,
     costToCost: true,
     profitTarget: null,
-    timeExit: '09:40'
+    timeExit: '15:30'
   });
   const [results, setResults] = useState(null);
   const [loading, setLoading] = useState(false);

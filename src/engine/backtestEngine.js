@@ -4,9 +4,18 @@ import { TradeManager } from './tradeManager.js';
 import { calculatePL } from '../utils/helpers.js';
 
 /**
- * Main backtesting engine
- * Takes CSV data, strategy, and parameters
- * Returns trade results and summary
+ * UNIVERSAL BACKTEST ENGINE
+ * 
+ * This engine should NEVER need to be modified for new strategies.
+ * All strategy-specific logic lives in the strategy file.
+ * 
+ * The engine is just a dumb orchestrator that:
+ * 1. Loops through candles
+ * 2. Asks strategy: "Should we enter?"
+ * 3. Manages trades via TradeManager
+ * 4. Calculates results
+ * 
+ * That's it. Nothing more.
  */
 export function runBacktest(csvData, strategy, parameters) {
   const trades = [];
@@ -14,8 +23,9 @@ export function runBacktest(csvData, strategy, parameters) {
   
   let inPosition = false;
   let tradeManager = null;
-  let referenceCandle = null;
-  let candlesSinceReference = 0;
+  
+  // Create strategy instance (strategies can maintain their own state)
+  const strategyInstance = strategy.createInstance ? strategy.createInstance() : { strategy };
   
   // Loop through all candles
   for (let i = 0; i < csvData.length; i++) {
@@ -38,66 +48,31 @@ export function runBacktest(csvData, strategy, parameters) {
         // Reset for next trade
         inPosition = false;
         tradeManager = null;
-        referenceCandle = null;
-        candlesSinceReference = 0;
+        
+        // Notify strategy about trade exit (so it can reset its state)
+        if (strategyInstance.onTradeExit) {
+          strategyInstance.onTradeExit();
+        }
       }
       
       continue; // Skip to next candle
     }
     
-    // Not in position - look for setup
+    // Not in position - ask strategy if we should enter
+    const entrySignal = strategyInstance.checkEntry 
+      ? strategyInstance.checkEntry(candle, i, csvData)
+      : strategy.checkEntry(candle, i, csvData);
     
-    // If we have a reference candle, check for entry
-    if (referenceCandle) {
-      candlesSinceReference++;
-      
-      // Check if entry triggered
-      const entryPrice = strategy.checkEntry(candle, referenceCandle);
-      
-      if (entryPrice) {
-        // Check for ambiguous case (both entry and SL hit in same candle)
-        const initialSL = calculateInitialSL(referenceCandle, candle, entryPrice, parameters);
-        
-        if (candle.low <= initialSL && candle.high >= entryPrice) {
-          // Ambiguous - skip this trade
-          skippedTrades.push({
-            referenceCandle: referenceCandle,
-            entryCandle: candle,
-            reason: 'Entry and SL both hit in same candle (ambiguous)',
-            timestamp: candle.timestamp
-          });
-          
-          // Reset and look for new reference
-          referenceCandle = null;
-          candlesSinceReference = 0;
-          continue;
-        }
-        
-        // Valid entry - enter trade
-        tradeManager = new TradeManager(parameters);
-        tradeManager.enter(entryPrice, candle.timestamp, referenceCandle, candle);
-        inPosition = true;
-        
-        // Reset reference tracking
-        referenceCandle = null;
-        candlesSinceReference = 0;
-        continue;
-      }
-      
-      // Check if we've waited too long
-      if (candlesSinceReference > strategy.maxCandlesWait) {
-        // Reset and look for new reference
-        referenceCandle = null;
-        candlesSinceReference = 0;
-      }
-    }
-    
-    // Look for reference candle (if not already waiting for entry)
-    if (!referenceCandle) {
-      if (strategy.findReferenceCandle(candle, i, csvData)) {
-        referenceCandle = candle;
-        candlesSinceReference = 0;
-      }
+    if (entrySignal && entrySignal.enter) {
+      // Strategy says enter!
+      tradeManager = new TradeManager(parameters);
+      tradeManager.enter(
+        entrySignal.entryPrice, 
+        candle.timestamp, 
+        entrySignal.referenceCandle || candle, 
+        candle
+      );
+      inPosition = true;
     }
   }
   
@@ -120,27 +95,6 @@ export function runBacktest(csvData, strategy, parameters) {
     skippedTrades,
     summary
   };
-}
-
-/**
- * Calculate initial SL for ambiguity check
- */
-function calculateInitialSL(referenceCandle, entryCandle, entryPrice, parameters) {
-  const { initialSL, fixedSLPoints } = parameters;
-
-  switch (initialSL) {
-    case 'reference_low':
-      return referenceCandle.low;
-    
-    case 'fixed':
-      return entryPrice - fixedSLPoints;
-    
-    case 'entry_low':
-      return entryCandle.low;
-    
-    default:
-      return referenceCandle.low;
-  }
 }
 
 /**
