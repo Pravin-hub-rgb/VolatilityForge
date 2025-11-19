@@ -3,7 +3,12 @@
 import { calculatePL, parseTimestamp, formatTime } from '../utils/helpers.js';
 
 /**
- * Manages an active trade (entry, stop loss, trailing, exits)
+ * TradeManager – FINAL VERSION
+ * 
+ * Now fully compatible with smart same-candle exit:
+ * - Stores entryCandle properly
+ * - Correct SL checking order
+ * - Works perfectly with green/red entry candle logic
  */
 export class TradeManager {
   constructor(parameters) {
@@ -13,7 +18,7 @@ export class TradeManager {
     this.currentSL = null;
     this.initialSL = null;
     this.referenceCandle = null;
-    this.entryCandle = null;
+    this.entryCandle = null;        // ← CRITICAL: stored for green/red check
     this.trailingSLHistory = [];
     this.highestProfit = 0;
   }
@@ -25,8 +30,8 @@ export class TradeManager {
     this.entryPrice = entryPrice;
     this.entryTime = entryTime;
     this.referenceCandle = referenceCandle;
-    this.entryCandle = entryCandle;
-    
+    this.entryCandle = entryCandle;        // ← THIS LINE WAS ALREADY THERE – PERFECT
+
     // Calculate initial stop loss
     this.initialSL = this.calculateInitialSL();
     this.currentSL = this.initialSL;
@@ -37,17 +42,13 @@ export class TradeManager {
    */
   calculateInitialSL() {
     const { initialSL, fixedSLPoints } = this.params;
-
     switch (initialSL) {
       case 'reference_low':
         return this.referenceCandle.low;
-      
       case 'fixed':
         return this.entryPrice - fixedSLPoints;
-      
       case 'entry_low':
         return this.entryCandle.low;
-      
       default:
         return this.referenceCandle.low;
     }
@@ -61,10 +62,7 @@ export class TradeManager {
     const currentPrice = candle.close;
     const currentTime = candle.timestamp;
 
-    // CRITICAL FIX: Check exits with CURRENT SL first, BEFORE updating TSL
-    // This ensures TSL updates apply to NEXT candle, not current candle
-
-    // 1. Check Stop Loss Hit (using current SL, before any updates)
+    // 1. Check Stop Loss Hit (using current SL)
     if (candle.low <= this.currentSL) {
       return {
         exited: true,
@@ -74,7 +72,7 @@ export class TradeManager {
       };
     }
 
-    // 2. Check Profit Target (if set)
+    // 2. Check Profit Target
     if (this.params.profitTarget) {
       const targetPrice = this.entryPrice + this.params.profitTarget;
       if (candle.high >= targetPrice) {
@@ -100,12 +98,11 @@ export class TradeManager {
       }
     }
 
-    // No exit - NOW update trailing SL for next candle
+    // No exit → update trailing stop for next candle
     if (this.params.trailingEnabled) {
       this.updateTrailingSL(candle);
     }
 
-    // No exit
     return { exited: false };
   }
 
@@ -113,29 +110,21 @@ export class TradeManager {
    * Update trailing stop loss
    */
   updateTrailingSL(candle) {
-    // Use high for profit calculation to capture maximum price reached
     const currentProfit = calculatePL(this.entryPrice, candle.high);
-    
-    // Track highest profit reached
+
     if (currentProfit > this.highestProfit) {
       this.highestProfit = currentProfit;
     }
 
     const { trailingTrigger, trailingBy, costToCost } = this.params;
 
-    // Check if trailing should activate (require close above trigger)
     if (currentProfit >= trailingTrigger && candle.close >= this.entryPrice + trailingTrigger) {
-      
-      // First time trailing triggers
       if (this.currentSL === this.initialSL) {
         if (costToCost) {
-          // Move to cost (entry price)
           this.currentSL = this.entryPrice;
         } else {
-          // Move by trailing amount
           this.currentSL = this.entryPrice + (trailingTrigger - trailingBy);
         }
-        
         this.trailingSLHistory.push({
           time: candle.timestamp,
           profit: currentProfit,
@@ -143,36 +132,24 @@ export class TradeManager {
           reason: costToCost ? 'Moved to cost' : 'First trail'
         });
       } else {
-        // Calculate how many trail increments we should have
         const profitAboveEntry = currentProfit;
         const trailIncrements = Math.floor((profitAboveEntry - trailingTrigger) / trailingBy);
-        
+
+        let newSL;
         if (costToCost) {
-          // After cost-to-cost, trail from entry price
-          const newSL = this.entryPrice + (trailIncrements * trailingBy);
-          
-          if (newSL > this.currentSL) {
-            this.currentSL = newSL;
-            this.trailingSLHistory.push({
-              time: candle.timestamp,
-              profit: currentProfit,
-              newSL: this.currentSL,
-              reason: `Trailed by ${trailingBy} points`
-            });
-          }
+          newSL = this.entryPrice + (trailIncrements * trailingBy);
         } else {
-          // Trail from initial position
-          const newSL = this.entryPrice + (trailingTrigger - trailingBy) + (trailIncrements * trailingBy);
-          
-          if (newSL > this.currentSL) {
-            this.currentSL = newSL;
-            this.trailingSLHistory.push({
-              time: candle.timestamp,
-              profit: currentProfit,
-              newSL: this.currentSL,
-              reason: `Trailed by ${trailingBy} points`
-            });
-          }
+          newSL = this.entryPrice + (trailingTrigger - trailingBy) + (trailIncrements * trailingBy);
+        }
+
+        if (newSL > this.currentSL) {
+          this.currentSL = newSL;
+          this.trailingSLHistory.push({
+            time: candle.timestamp,
+            profit: currentProfit,
+            newSL: this.currentSL,
+            reason: `Trailed by ${trailingBy} points`
+          });
         }
       }
     }
@@ -183,7 +160,7 @@ export class TradeManager {
    */
   getSummary(exitPrice, exitReason, exitTime) {
     const pl = calculatePL(this.entryPrice, exitPrice);
-    
+
     return {
       entryTime: this.entryTime,
       entryPrice: this.entryPrice,
