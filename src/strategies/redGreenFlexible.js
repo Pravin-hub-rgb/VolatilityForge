@@ -78,6 +78,30 @@ class RedGreenFlexibleInstance {
     const isRed = isRedCandle(candle);
 
     // ==============================================
+    // STAGE 0: Skip flag is active (cooling period)
+    // CHECK THIS FIRST, BEFORE ANYTHING ELSE!
+    // ==============================================
+    if (this.skipNextCandle) {
+      console.log(`[${candle.timestamp}] ⏭️ SKIPPING this candle (cooling period after big red)`);
+      
+      // Check if this candle is ALSO big (consecutive big candles)
+      if (isRed && isBig) {
+        console.log(`[${candle.timestamp}] 🔥 This candle is ALSO big red (size=${candleSize.toFixed(2)}), extending skip`);
+        // Keep skip flag active for next candle
+        return null;
+      }
+
+      // Cooling period over - this candle becomes new reference
+      this.skipNextCandle = false;
+      this.referenceCandle = candle;
+      this.referenceType = isRed ? 'red' : 'green';
+      this.candlesSinceReference = 0;
+      
+      console.log(`[${candle.timestamp}] ✅ Cooling over, NEW ${this.referenceType.toUpperCase()} reference set, High=${candle.high}, Size=${candleSize.toFixed(2)}`);
+      return null;
+    }
+
+    // ==============================================
     // STAGE 1: Looking for initial reference candle
     // ==============================================
     if (!this.referenceCandle) {
@@ -99,30 +123,7 @@ class RedGreenFlexibleInstance {
     }
 
     // ==============================================
-    // STAGE 2: Skip flag is active (cooling period)
-    // ==============================================
-    if (this.skipNextCandle) {
-      console.log(`[${candle.timestamp}] ⏭️ SKIPPING this candle (cooling period after big red)`);
-      
-      // Check if this candle is ALSO big (consecutive big candles)
-      if (isBig) {
-        console.log(`[${candle.timestamp}] 🔥 This candle is ALSO big (size=${candleSize.toFixed(2)}), extending skip`);
-        // Keep skip flag active for next candle
-        return null;
-      }
-
-      // Cooling period over - this candle becomes new reference
-      this.skipNextCandle = false;
-      this.referenceCandle = candle;
-      this.referenceType = isRed ? 'red' : 'green';
-      this.candlesSinceReference = 0;
-      
-      console.log(`[${candle.timestamp}] ✅ Cooling over, NEW ${this.referenceType.toUpperCase()} reference set, High=${candle.high}, Size=${candleSize.toFixed(2)}`);
-      return null;
-    }
-
-    // ==============================================
-    // STAGE 3: Have reference, waiting for breakout
+    // STAGE 2: Have reference, waiting for breakout
     // ==============================================
 
     // --- Red candle appears: Shift or Set Big Red ---
