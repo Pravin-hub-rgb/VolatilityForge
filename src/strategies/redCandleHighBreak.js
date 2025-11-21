@@ -60,9 +60,8 @@ class RedCandleHighBreakInstance {
     }
 
     // STAGE 2: Have reference, waiting for breakout
-    this.candlesSinceReference++;
-
-    // Check if newer red candle appears (shift reference)
+    
+    // Check if newer red candle appears (shift reference) - check BEFORE incrementing
     if (isRedCandle(candle)) {
       this.referenceCandle = candle;
       this.candlesSinceReference = 0;
@@ -70,10 +69,14 @@ class RedCandleHighBreakInstance {
       return null;
     }
 
-    // Check for breakout
+    // Increment counter for non-red candles
+    this.candlesSinceReference++;
+
+    // Check for breakout FIRST (before timeout check)
+    // Entry triggers when current candle high breaks above reference candle high
     if (candle.high > this.referenceCandle.high) {
       const entryPrice = this.referenceCandle.high;
-      console.log(`[${candle.timestamp}] 🚀 ENTRY! Price=${entryPrice}, broke ${this.referenceCandle.high}`);
+      console.log(`[${candle.timestamp}] 🚀 ENTRY! EntryPrice=${entryPrice}, CurrentHigh=${candle.high}, CurrentLow=${candle.low}, CurrentClose=${candle.close}, ReferenceHigh=${this.referenceCandle.high}, ReferenceLow=${this.referenceCandle.low}`);
       
       return {
         enter: true,
@@ -82,12 +85,13 @@ class RedCandleHighBreakInstance {
       };
     }
 
-    // Timeout - waited too long
+    // Timeout - waited too long (check AFTER breakout check, and use >= to timeout on the candle AFTER maxWaitCandles)
     if (this.candlesSinceReference > this.maxWaitCandles) {
-      console.log(`[${candle.timestamp}] ⏰ Timeout, resetting`);
+      console.log(`[${candle.timestamp}] ⏰ Timeout, resetting (waited ${this.candlesSinceReference} candles, max=${this.maxWaitCandles})`);
       this.reset();
     }
 
     return null;
   }
 }
+

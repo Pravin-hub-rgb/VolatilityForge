@@ -1,8 +1,9 @@
 // src/strategies/index.js
-
 import { redCandleHighBreak } from './redCandleHighBreak.js';
 import { fourRedCandleBreak } from './fourRedCandleBreak.js';
-import { greenContinuation } from './green_continuation.js';  // ← ADDED
+import { greenContinuation } from './green_continuation.js';
+import { redGreenFlexible } from './redGreenFlexible.js';
+import { whateverBreaks } from './whateverBreaks.js';  // ← ADDED
 
 /**
  * All available strategies
@@ -11,8 +12,9 @@ import { greenContinuation } from './green_continuation.js';  // ← ADDED
 export const allStrategies = [
   redCandleHighBreak,
   fourRedCandleBreak,
-  greenContinuation   // ← NOW ACTIVE
-  // Add more later if you want
+  greenContinuation,
+  redGreenFlexible,
+  whateverBreaks      // ← NOW ACTIVE
 ];
 
 /**

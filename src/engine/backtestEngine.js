@@ -35,50 +35,55 @@ export function runBacktest(csvData, strategy, parameters) {
         }
         continue;
       }
+      
+      // Already in position, skip entry check
+      continue;
     }
 
     // ——— NOT IN POSITION: Check for entry ———
-    const entrySignal = strategyInstance.checkEntry
-      ? strategyInstance.checkEntry(candle, i, csvData)
-      : strategy.checkEntry?.(candle, i, csvData);
+    if (!inPosition) {
+      const entrySignal = strategyInstance.checkEntry
+        ? strategyInstance.checkEntry(candle, i, csvData)
+        : strategy.checkEntry?.(candle, i, csvData);
 
-    if (entrySignal && entrySignal.enter) {
-      tradeManager = new TradeManager(parameters);
-      tradeManager.enter(
-        entrySignal.entryPrice,
-        candle.timestamp,
-        entrySignal.referenceCandle || candle,
-        candle
-      );
-      inPosition = true;
+      if (entrySignal && entrySignal.enter) {
+        tradeManager = new TradeManager(parameters);
+        tradeManager.enter(
+          entrySignal.entryPrice,
+          candle.timestamp,
+          entrySignal.referenceCandle || candle,
+          candle
+        );
+        inPosition = true;
 
-      // ——— SMART SAME-CANDLE EXIT ———
-      const exitCheck = tradeManager.checkExit(candle);
+        // ——— SMART SAME-CANDLE EXIT ———
+        const exitCheck = tradeManager.checkExit(candle);
 
-      if (exitCheck.exited) {
-        const entryCandle = tradeManager.entryCandle;
-        const isGreenEntryCandle = entryCandle.close > entryCandle.open;
+        if (exitCheck.exited) {
+          const entryCandle = tradeManager.entryCandle;
+          const isGreenEntryCandle = entryCandle.close > entryCandle.open;
 
-        // GREEN entry candle + wicked below SL → IGNORE (valid breakout)
-        if (isGreenEntryCandle && tradeManager.entryCandle === candle) {
-          // Do nothing — keep trade open
-          // console.log(`Green entry candle wicked below SL → ignored`);
-        } else {
-          // RED entry candle or later candle → normal exit
-          const tradeSummary = tradeManager.getSummary(
-            exitCheck.exitPrice,
-            exitCheck.reason,
-            exitCheck.time
-          );
-          trades.push(tradeSummary);
+          // GREEN entry candle + wicked below SL → IGNORE (valid breakout)
+          if (isGreenEntryCandle && tradeManager.entryCandle === candle) {
+            // Do nothing — keep trade open
+            // console.log(`Green entry candle wicked below SL → ignored`);
+          } else {
+            // RED entry candle or later candle → normal exit
+            const tradeSummary = tradeManager.getSummary(
+              exitCheck.exitPrice,
+              exitCheck.reason,
+              exitCheck.time
+            );
+            trades.push(tradeSummary);
 
-          inPosition = false;
-          tradeManager = null;
+            inPosition = false;
+            tradeManager = null;
 
-          if (strategyInstance.onTradeExit) {
-            strategyInstance.onTradeExit();
+            if (strategyInstance.onTradeExit) {
+              strategyInstance.onTradeExit();
+            }
+            continue;
           }
-          continue;
         }
       }
     }
