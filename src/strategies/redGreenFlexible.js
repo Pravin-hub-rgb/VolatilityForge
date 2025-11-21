@@ -41,24 +41,35 @@ class RedGreenFlexibleInstance {
   }
 
   /**
-   * Called when trade exits - reset everything
+   * Called when trade ENTERS - reset to start looking for next setup
+   */
+  onTradeEntry() {
+    console.log(`🔄 Trade entered, resetting strategy state for next setup`);
+    this.reset();
+  }
+
+  /**
+   * Called when trade EXITS - reset everything
    */
   onTradeExit() {
+    console.log(`🔄 Trade exited, resetting strategy state`);
     this.reset();
   }
 
   /**
    * Calculate candle size (points)
+   * Uses High - Close to capture total downward move including wicks
    */
   getCandleSize(candle) {
-    return Math.abs(candle.open - candle.close);
+    return candle.high - candle.close;
   }
 
   /**
    * Check if candle is big (≥ threshold)
    */
   isBigCandle(candle) {
-    return this.getCandleSize(candle) >= this.bigRedThreshold;
+    const size = this.getCandleSize(candle);
+    return size >= this.bigRedThreshold;
   }
 
   /**
@@ -79,25 +90,25 @@ class RedGreenFlexibleInstance {
 
     // ==============================================
     // STAGE 0: Skip flag is active (cooling period)
-    // CHECK THIS FIRST, BEFORE ANYTHING ELSE!
     // ==============================================
     if (this.skipNextCandle) {
-      console.log(`[${candle.timestamp}] ⏭️ SKIPPING this candle (cooling period after big red)`);
+      console.log(`[${candle.timestamp}] ⭐️ COOLING PERIOD - Checking this candle...`);
       
-      // Check if this candle is ALSO big (consecutive big candles)
+      // Check if this candle is ALSO a big red (extend cooling)
       if (isRed && isBig) {
-        console.log(`[${candle.timestamp}] 🔥 This candle is ALSO big red (size=${candleSize.toFixed(2)}), extending skip`);
-        // Keep skip flag active for next candle
+        console.log(`[${candle.timestamp}] 🔥 This is ALSO big red (${candleSize.toFixed(2)} ≥ ${this.bigRedThreshold}), EXTENDING cooling to next candle`);
+        // Skip flag stays true for next candle
         return null;
       }
 
       // Cooling period over - this candle becomes new reference
+      console.log(`[${candle.timestamp}] ✅ Cooling COMPLETE. This candle becomes reference.`);
       this.skipNextCandle = false;
       this.referenceCandle = candle;
       this.referenceType = isRed ? 'red' : 'green';
       this.candlesSinceReference = 0;
       
-      console.log(`[${candle.timestamp}] ✅ Cooling over, NEW ${this.referenceType.toUpperCase()} reference set, High=${candle.high}, Size=${candleSize.toFixed(2)}`);
+      console.log(`[${candle.timestamp}] 🔍 NEW ${this.referenceType.toUpperCase()} reference: High=${candle.high}, Size=${candleSize.toFixed(2)}, MaxWait=${this.getMaxWaitCandles()}`);
       return null;
     }
 
@@ -106,17 +117,15 @@ class RedGreenFlexibleInstance {
     // ==============================================
     if (!this.referenceCandle) {
       if (isRed) {
-        // Check if it's a big red
         if (isBig) {
-          console.log(`[${candle.timestamp}] 🔴🔥 BIG RED detected! Size=${candleSize.toFixed(2)}, High=${candle.high}, Skipping next candle`);
+          console.log(`[${candle.timestamp}] 🔴🔥 BIG RED detected! Size=${candleSize.toFixed(2)} ≥ ${this.bigRedThreshold}. Setting skip flag.`);
           this.skipNextCandle = true;
           return null;
         } else {
-          // Normal red - set as reference
           this.referenceCandle = candle;
           this.referenceType = 'red';
           this.candlesSinceReference = 0;
-          console.log(`[${candle.timestamp}] 🔴 Normal red reference set, High=${candle.high}, Size=${candleSize.toFixed(2)}`);
+          console.log(`[${candle.timestamp}] 🔴 Normal red reference: High=${candle.high}, Size=${candleSize.toFixed(2)}, MaxWait=2`);
         }
       }
       return null;
@@ -125,34 +134,17 @@ class RedGreenFlexibleInstance {
     // ==============================================
     // STAGE 2: Have reference, waiting for breakout
     // ==============================================
-
-    // --- Red candle appears: Shift or Set Big Red ---
-    if (isRed) {
-      // Check if it's a big red
-      if (isBig) {
-        console.log(`[${candle.timestamp}] 🔴🔥 NEW BIG RED! Size=${candleSize.toFixed(2)}, Resetting with skip flag`);
-        this.referenceCandle = null;
-        this.referenceType = null;
-        this.candlesSinceReference = 0;
-        this.skipNextCandle = true;
-        return null;
-      } else {
-        // Normal red - shift reference
-        console.log(`[${candle.timestamp}] 🔄 Shifted to newer normal red, High=${candle.high}, Size=${candleSize.toFixed(2)}`);
-        this.referenceCandle = candle;
-        this.referenceType = 'red';
-        this.candlesSinceReference = 0;
-        return null;
-      }
-    }
-
-    // --- Non-red candle: Increment counter ---
+    
+    // Increment counter (this candle counts as a wait candle)
     this.candlesSinceReference++;
+    
+    console.log(`[${candle.timestamp}] 📊 Reference: ${this.referenceType.toUpperCase()}, RefHigh=${this.referenceCandle.high}, Counter=${this.candlesSinceReference}, MaxWait=${this.getMaxWaitCandles()}`);
 
-    // --- Check for BREAKOUT (before timeout) ---
+    // 🚨 PRIORITY 1: Check for BREAKOUT FIRST
     if (candle.high > this.referenceCandle.high) {
       const entryPrice = this.referenceCandle.high;
-      console.log(`[${candle.timestamp}] 🚀 BREAKOUT! Entry=${entryPrice}, CurrentHigh=${candle.high}, Reference=${this.referenceType.toUpperCase()}, RefHigh=${this.referenceCandle.high}`);
+      console.log(`[${candle.timestamp}] 🚀 BREAKOUT! CurrentHigh=${candle.high} > RefHigh=${this.referenceCandle.high}`);
+      console.log(`[${candle.timestamp}] 💰 ENTRY at ${entryPrice} (Reference: ${this.referenceType}, waited ${this.candlesSinceReference} candles)`);
       
       return {
         enter: true,
@@ -162,10 +154,34 @@ class RedGreenFlexibleInstance {
       };
     }
 
-    // --- Check TIMEOUT (after breakout check) ---
+    // 🚨 PRIORITY 2: No breakout - check if current candle is BIG RED
+    if (isRed && isBig) {
+      console.log(`[${candle.timestamp}] 🔴🔥 NEW BIG RED while waiting! Size=${candleSize.toFixed(2)}. Resetting with skip flag.`);
+      this.referenceCandle = null;
+      this.referenceType = null;
+      this.candlesSinceReference = 0;
+      this.skipNextCandle = true;
+      return null;
+    }
+
+    // PRIORITY 3: Normal red - shift only if current reference is also RED
+    if (isRed) {
+      if (this.referenceType === 'red') {
+        console.log(`[${candle.timestamp}] 🔄 New normal red - SHIFTING reference. NewHigh=${candle.high}, Size=${candleSize.toFixed(2)}`);
+        this.referenceCandle = candle;
+        this.referenceType = 'red';
+        this.candlesSinceReference = 0;
+        return null;
+      } else {
+        console.log(`[${candle.timestamp}] 🔴 Red candle but GREEN reference doesn't shift`);
+        // Don't shift green references - fall through to timeout check
+      }
+    }
+
+    // Check timeout
     const maxWait = this.getMaxWaitCandles();
     if (this.candlesSinceReference > maxWait) {
-      console.log(`[${candle.timestamp}] ⏰ Timeout! Waited ${this.candlesSinceReference} candles (max=${maxWait}, type=${this.referenceType}), Resetting`);
+      console.log(`[${candle.timestamp}] ⏰ TIMEOUT! Waited ${this.candlesSinceReference} candles (max=${maxWait}). Resetting.`);
       this.reset();
       return null;
     }

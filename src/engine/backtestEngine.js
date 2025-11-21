@@ -15,7 +15,7 @@ export function runBacktest(csvData, strategy, parameters) {
   for (let i = 0; i < csvData.length; i++) {
     const candle = csvData[i];
 
-    // ——— IN POSITION: Check normal exit ———
+    // ✅ STEP 1: Check exit FIRST (if currently in trade)
     if (inPosition && tradeManager) {
       const exitCheck = tradeManager.checkExit(candle);
 
@@ -30,59 +30,60 @@ export function runBacktest(csvData, strategy, parameters) {
         inPosition = false;
         tradeManager = null;
 
+        // Notify strategy that trade exited
         if (strategyInstance.onTradeExit) {
           strategyInstance.onTradeExit();
         }
-        continue;
+        // DON'T continue - let strategy analyze this candle below
       }
-      
-      // Already in position, skip entry check
-      continue;
     }
 
-    // ——— NOT IN POSITION: Check for entry ———
-    if (!inPosition) {
-      const entrySignal = strategyInstance.checkEntry
-        ? strategyInstance.checkEntry(candle, i, csvData)
-        : strategy.checkEntry?.(candle, i, csvData);
+    // ✅ STEP 2: ALWAYS let strategy analyze the candle (for reference tracking)
+    const entrySignal = strategyInstance.checkEntry
+      ? strategyInstance.checkEntry(candle, i, csvData)
+      : strategy.checkEntry?.(candle, i, csvData);
 
-      if (entrySignal && entrySignal.enter) {
-        tradeManager = new TradeManager(parameters);
-        tradeManager.enter(
-          entrySignal.entryPrice,
-          candle.timestamp,
-          entrySignal.referenceCandle || candle,
-          candle
-        );
-        inPosition = true;
+    // ✅ STEP 3: Only ACT on entry signal if NOT currently in position
+    if (!inPosition && entrySignal && entrySignal.enter) {
+      tradeManager = new TradeManager(parameters);
+      tradeManager.enter(
+        entrySignal.entryPrice,
+        candle.timestamp,
+        entrySignal.referenceCandle || candle,
+        candle
+      );
+      inPosition = true;
 
-        // ——— SMART SAME-CANDLE EXIT ———
-        const exitCheck = tradeManager.checkExit(candle);
+      // ✅ Notify strategy that trade entered (reset for next setup)
+      if (strategyInstance.onTradeEntry) {
+        strategyInstance.onTradeEntry();
+      }
 
-        if (exitCheck.exited) {
-          const entryCandle = tradeManager.entryCandle;
-          const isGreenEntryCandle = entryCandle.close > entryCandle.open;
+      // ——— SMART SAME-CANDLE EXIT ———
+      const exitCheck = tradeManager.checkExit(candle);
 
-          // GREEN entry candle + wicked below SL → IGNORE (valid breakout)
-          if (isGreenEntryCandle && tradeManager.entryCandle === candle) {
-            // Do nothing — keep trade open
-            // console.log(`Green entry candle wicked below SL → ignored`);
-          } else {
-            // RED entry candle or later candle → normal exit
-            const tradeSummary = tradeManager.getSummary(
-              exitCheck.exitPrice,
-              exitCheck.reason,
-              exitCheck.time
-            );
-            trades.push(tradeSummary);
+      if (exitCheck.exited) {
+        const entryCandle = tradeManager.entryCandle;
+        const isGreenEntryCandle = entryCandle.close > entryCandle.open;
 
-            inPosition = false;
-            tradeManager = null;
+        // GREEN entry candle + wicked below SL → IGNORE (valid breakout)
+        if (isGreenEntryCandle && tradeManager.entryCandle === candle) {
+          // Do nothing – keep trade open
+        } else {
+          // RED entry candle or later candle → normal exit
+          const tradeSummary = tradeManager.getSummary(
+            exitCheck.exitPrice,
+            exitCheck.reason,
+            exitCheck.time
+          );
+          trades.push(tradeSummary);
 
-            if (strategyInstance.onTradeExit) {
-              strategyInstance.onTradeExit();
-            }
-            continue;
+          inPosition = false;
+          tradeManager = null;
+
+          // Notify strategy (already reset by onTradeEntry, but just in case)
+          if (strategyInstance.onTradeExit) {
+            strategyInstance.onTradeExit();
           }
         }
       }

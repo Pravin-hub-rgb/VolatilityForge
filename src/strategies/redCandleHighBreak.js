@@ -2,13 +2,15 @@
 import { isRedCandle } from '../utils/helpers.js';
 
 /**
- * RED CANDLE HIGH BREAK STRATEGY - SELF-CONTAINED
+ * RED CANDLE HIGH BREAK STRATEGY - FIXED VERSION
  * 
  * Setup:
  * - Find first red candle (open > close)
  * - Enter when price breaks above red candle high
  * - Wait max 2 candles for breakout
  * - If newer red candle appears while waiting, shift to it
+ * 
+ * FIX: Check for breakout BEFORE shifting to newer red candle
  */
 export const redCandleHighBreak = {
   id: 'red_candle_high_break',
@@ -61,18 +63,7 @@ class RedCandleHighBreakInstance {
 
     // STAGE 2: Have reference, waiting for breakout
     
-    // Check if newer red candle appears (shift reference) - check BEFORE incrementing
-    if (isRedCandle(candle)) {
-      this.referenceCandle = candle;
-      this.candlesSinceReference = 0;
-      console.log(`[${candle.timestamp}] 🔄 Shifted to newer red candle, high=${candle.high}`);
-      return null;
-    }
-
-    // Increment counter for non-red candles
-    this.candlesSinceReference++;
-
-    // Check for breakout FIRST (before timeout check)
+    // ⚠️ CRITICAL FIX: Check for breakout FIRST (before checking if it's a red candle)
     // Entry triggers when current candle high breaks above reference candle high
     if (candle.high > this.referenceCandle.high) {
       const entryPrice = this.referenceCandle.high;
@@ -85,7 +76,19 @@ class RedCandleHighBreakInstance {
       };
     }
 
-    // Timeout - waited too long (check AFTER breakout check, and use >= to timeout on the candle AFTER maxWaitCandles)
+    // NOW check if newer red candle appears (shift reference)
+    // This happens AFTER breakout check, so we don't miss entries
+    if (isRedCandle(candle)) {
+      this.referenceCandle = candle;
+      this.candlesSinceReference = 0;
+      console.log(`[${candle.timestamp}] 🔄 Shifted to newer red candle, high=${candle.high}`);
+      return null;
+    }
+
+    // Increment counter for non-red candles
+    this.candlesSinceReference++;
+
+    // Timeout - waited too long (check AFTER breakout check, use > instead of >=)
     if (this.candlesSinceReference > this.maxWaitCandles) {
       console.log(`[${candle.timestamp}] ⏰ Timeout, resetting (waited ${this.candlesSinceReference} candles, max=${this.maxWaitCandles})`);
       this.reset();
@@ -94,4 +97,3 @@ class RedCandleHighBreakInstance {
     return null;
   }
 }
-
