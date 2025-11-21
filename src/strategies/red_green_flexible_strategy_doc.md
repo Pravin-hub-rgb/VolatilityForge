@@ -486,3 +486,210 @@ When red candle closes:
 ---
 
 **Yeh pura theory hai bhai! Sab covered? Koi doubt?** 🔥
+
+
+
+
+follow up:
+
+
+I have updated the **Red-Green Flexible Strategy Document** to include the "Big Green Candle" logic.
+
+### **Key Changes Made:**
+
+1.  **New Rule (Rule 3):** Added logic for **Big Green Candles** (Size $\ge$ 7 points using `Close - Low`).
+2.  **Cooling Logic:** Specified that after a Big Green candle, we **skip** the next candle.
+3.  **Reset Logic:** Unlike Big Red (which allows a Green reference after cooling), after a Big Green cooling period, we **must reset** and look for a **Red Candle** again. This prevents chasing an exhausted move.
+4.  **Size Definition:** Added `Close - Low` formula to the specific clarifications.
+
+-----
+
+### **Updated Document Content**
+
+```markdown
+# 📘 Red-Green Flexible Breakout Strategy - Complete Theory (v2.0)
+
+---
+
+## 🎯 Strategy Overview
+
+**Name:** Red-Green Flexible Breakout (Enhanced)
+**Timeframe:** 1-minute candles
+**Market:** Nifty 50 Options (Morning volatility: 9:15 - 9:40)
+**Core Concept:** Trade breakouts above reference candles, with volatility filters for both panic drops (Big Red) and euphoric spikes (Big Green).
+
+---
+
+## 🧠 Philosophy
+
+The strategy recognizes **three volatility states:**
+
+1.  **Normal Volatility:** Small Red/Green candles. Tradable immediate resistance/support.
+2.  **Panic Drop (Big Red):** Sharp selling. Requires cooling, but often leads to a "V-shape" reversal (Green reference allowed after cooling).
+3.  **Euphoric Spike (Big Green):** Sharp buying. Often indicates exhaustion. Requires cooling and a **fresh pullback (Red candle)** before re-entering. We do not chase momentum after a Big Green spike.
+
+---
+
+## 📊 Core Rules
+
+### **RULE 1: Normal Red Candle (Size < 7 points)**
+
+**Setup:**
+- Red candle appears (open > close)
+- Size = **Open - Close** < 7 points
+- This becomes **reference candle**
+
+**Entry Logic:**
+- Wait maximum **2 candles** for breakout
+- Enter when any candle's high > reference candle's high
+- Entry price = reference candle's high
+
+**Shifting Logic:**
+- If another red candle appears while waiting → Shift reference to newer red
+- Reset counter to 0
+
+**Timeout:**
+- If no breakout after 2 candles → Reset, look for new reference
+
+---
+
+### **RULE 2: Big Red Candle (Size ≥ 7 points)**
+
+**Setup:**
+- Red candle appears
+- Size = **Open - Close** ≥ 7 points
+
+**Cooling Period:**
+- **Skip the immediate next candle** (Candle 2) for entry.
+
+**Post-Cooling Logic (Candle 3+):**
+- **If Candle 2 was ALSO Big (Red or Green):** Continue skipping.
+- **If Candle 2 was Normal:** Candle 2 becomes the **NEW Reference** (regardless of color).
+    - **If Green:** 1 candle wait (Strict continuation).
+    - **If Red:** 2 candle wait (Normal rules).
+
+---
+
+### **RULE 3: Big Green Candle (Size ≥ 7 points)**
+
+**Setup:**
+- Green candle appears
+- Size = **Close - Low** ≥ 7 points (**Buying Pressure Calculation**)
+
+**Logic:**
+- This represents an "exhaustion spike" or extreme momentum.
+- Entering immediately is risky (chasing the top).
+
+**Cooling Period:**
+- **Skip the immediate next candle** for entry.
+
+**Post-Cooling Logic:**
+- **HARD RESET:** We do **NOT** use the next candle as a reference.
+- After the cooling candle finishes, we go back to **looking for a RED candle** (Rule 1 or 2).
+- We typically rarely enter *immediately* after a Big Green sequence unless a Red pullback occurs first.
+
+---
+
+### **RULE 4: Green Reference Candle**
+
+**When does green become reference?**
+- **ONLY** after a **Big Red Candle** + Cooling Period.
+- (It does NOT become reference after a Big Green Candle).
+
+**Entry Logic:**
+- **Strict 1 candle wait**
+- If immediate next candle breaks green's high → ENTRY
+- If no breakout → RESET
+
+---
+
+## 📈 Detailed Examples
+
+### **Example 1: Big Green Spike (The New Rule)**
+
+```
+
+Candle 1: Big Green (O=100, C=108, L=99, H=109)
+↓ Size check: Close (108) - Low (99) = 9 points
+↓ 9 \>= 7 → BIG GREEN DETECTED
+↓ Trigger Cooling
+
+Candle 2: Small Red (O=108, C=106)
+↓ Skipped (Cooling Period)
+↓ Cooling complete
+
+Candle 3: Small Green
+↓ Do we use this as reference?
+❌ NO\! (Rule 3 says: Reset and look for Red)
+↓ Ignore
+
+Candle 4: Red Candle (Normal Size)
+✅ New Sequence Starts -\> Set Reference
+
+```
+
+---
+
+### **Example 2: Big Red → Normal Green Reference**
+
+```
+
+Candle 1: Big Red (Size = 8 points)
+↓ Skip next candle
+
+Candle 2: Green (Size = 4 points)
+↓ Normal size, not skipped
+✅ Green becomes NEW reference (Rule 2 allows this)
+↓ 1 candle wait only
+
+Candle 3: Breakout \> Candle 2 High → ENTRY
+
+```
+
+---
+
+### **Example 3: Big Red → Big Green (The Double Spike)**
+
+```
+
+Candle 1: Big Red (Size = 8 points)
+↓ Skip next candle
+
+Candle 2: Big Green (Size = 9 points)
+↓ Still in cooling from Candle 1? Yes.
+↓ BUT Candle 2 is also BIG.
+↓ Trigger Cooling for Candle 3 (due to Big Green rule)
+
+Candle 3: Any Candle
+↓ Skipped (Cooling from Big Green)
+↓ After this, RESET and look for Red.
+
+```
+
+---
+
+## 🔍 Candle Size Calculations
+
+The strategy uses different formulas to measure "pressure" for Red vs Green:
+
+| Candle Type | Formula | Logic |
+| :--- | :--- | :--- |
+| **RED** | `Open - Close` | Measures pure selling drop (Body). |
+| **GREEN** | `Close - Low` | Measures total buying push from bottom (Body + Lower Wick). |
+
+---
+
+## ⚠️ Strategy Limitations & Clarifications
+
+1.  **Big Green vs Big Red Post-Cooling:**
+    * **After Big Red:** We accept *whatever* comes next (Red or Green) as reference.
+    * **After Big Green:** We accept *nothing*. We reset and wait for a Red candle.
+
+2.  **Cooling Priority:**
+    * If a candle is skipped due to cooling, we still check its size.
+    * If the skipped candle is *also* Big (Red or Green), the cooling period extends/resets.
+
+3.  **Entry Trigger:**
+    * Always on the BREAKOUT of the Reference High.
+```
+
