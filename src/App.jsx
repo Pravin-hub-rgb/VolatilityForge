@@ -333,66 +333,75 @@ function App() {
             ) : (
               <div className="space-y-6">
                 {/* Summary */}
-                <div className="bg-slate-900 rounded-lg p-4">
-                  <h3 className="text-lg font-semibold text-slate-200 mb-3">Summary</h3>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-slate-400 text-sm">Total Trades</p>
-                      <p className="text-2xl font-bold text-white">{results.summary.totalTrades}</p>
+                <div className="bg-slate-900 rounded-lg p-3">
+                  <div className="flex justify-between items-center mb-2">
+                    <h3 className="text-sm font-semibold text-slate-200">SUMMARY</h3>
+                    <div className="flex space-x-2 text-xs">
+                      <span className="text-green-400">{results.summary.winningTrades}W</span>
+                      <span className="text-slate-500">•</span>
+                      <span className="text-red-400">{results.summary.losingTrades}L</span>
                     </div>
+                  </div>
+                  <div className="flex justify-between items-end">
                     <div>
-                      <p className="text-slate-400 text-sm">Net P&L</p>
-                      <p className={`text-2xl font-bold ${results.summary.netPL >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                        {formatPL(results.summary.netPL)} pts
-                      </p>
+                      <div className="text-slate-400 text-xs">TOTAL TRADES</div>
+                      <div className="text-white font-bold">{results.summary.totalTrades}</div>
                     </div>
-                    {results.summary.totalTrades > 0 && (
-                      <>
-                        <div>
-                          <p className="text-slate-400 text-sm">Winning</p>
-                          <p className="text-green-400 font-semibold">{results.summary.winningTrades} trades</p>
-                        </div>
-                        <div>
-                          <p className="text-slate-400 text-sm">Losing</p>
-                          <p className="text-red-400 font-semibold">{results.summary.losingTrades} trades</p>
-                        </div>
-                      </>
-                    )}
+                    <div className="text-right">
+                      <div className="text-slate-400 text-xs">NET P&L</div>
+                      <div className={`text-xl font-bold ${results.summary.netPL >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {formatPL(results.summary.netPL)}
+                      </div>
+                    </div>
                   </div>
                 </div>
 
                 {/* Trade List */}
                 {results.trades.length > 0 && (
-                  <div>
+                  <div className="bg-slate-900 rounded-lg p-4">
                     <h3 className="text-lg font-semibold text-slate-200 mb-3">Trade Log</h3>
-                    <div className="space-y-3 max-h-96 overflow-y-auto">
-                      {results.trades.map((trade, idx) => (
-                        <div key={idx} className="bg-slate-900 rounded-lg p-4 border-l-4" style={{
-                          borderLeftColor: trade.pl >= 0 ? '#4ade80' : '#f87171'
-                        }}>
-                          <div className="flex justify-between items-start mb-2">
-                            <span className="text-slate-400 text-sm">Trade #{idx + 1}</span>
-                            <span className={`font-bold ${trade.pl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                              {formatPL(trade.pl)} pts
-                            </span>
-                          </div>
-                          <div className="grid grid-cols-2 gap-2 text-sm">
-                            <div>
-                              <p className="text-slate-500">Entry</p>
-                              <p className="text-slate-300">{formatTime(new Date(trade.entryTime))}</p>
-                              <p className="text-slate-400">{trade.entryPrice.toFixed(2)}</p>
+                    <div className="font-mono text-xs bg-slate-800 p-3 rounded overflow-x-auto max-h-[500px] overflow-y-auto">
+                      {results.trades.map((trade, idx) => {
+                        const isProfit = trade.pl >= 0;
+                        const plColor = isProfit ? 'text-green-400' : 'text-red-400';
+                        const plSign = isProfit ? '+' : '';
+                        
+                        return (
+                          <div key={idx} className="mb-2 pb-2 border-b border-slate-700 last:border-0">
+                            <div className="text-slate-400">
+                              <span className="text-slate-200">#{idx + 1}</span> | {formatTime(new Date(trade.entryTime))} → {formatTime(new Date(trade.exitTime))}
                             </div>
-                            <div>
-                              <p className="text-slate-500">Exit</p>
-                              <p className="text-slate-300">{formatTime(new Date(trade.exitTime))}</p>
-                              <p className="text-slate-400">{trade.exitPrice.toFixed(2)}</p>
+                            <div className="flex flex-wrap gap-x-4">
+                              <div>
+                                <span className="text-slate-400">Entry: </span>
+                                <span className="text-slate-200">{trade.entryPrice.toFixed(2)}</span>
+                              </div>
+                              <div>
+                                <span className="text-slate-400">Exit: </span>
+                                <span className="text-slate-200">{trade.exitPrice.toFixed(2)}</span>
+                              </div>
+                              <div>
+                                <span className="text-slate-400">P/L: </span>
+                                <span className={`font-bold ${plColor}`}>
+                                  {plSign}{formatPL(trade.pl)} pts
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-slate-400">Status: </span>
+                                <span className={isProfit ? 'text-green-400' : 'text-red-400'}>
+                                  {isProfit ? 'PROFIT' : 'LOSS'}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="text-slate-500 text-xs mt-1">
+                              Exit Reason: {trade.exitReason}
                             </div>
                           </div>
-                          <div className="mt-2 pt-2 border-t border-slate-700">
-                            <p className="text-slate-400 text-xs">Exit: {trade.exitReason}</p>
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
+                    </div>
+                    <div className="mt-2 text-xs text-slate-400">
+                      {results.trades.length} trades • Scroll to view more
                     </div>
                   </div>
                 )}
